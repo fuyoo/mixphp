@@ -2,11 +2,12 @@
 
 namespace apps\console\commands;
 
+use mix\base\Channel;
+use mix\base\ChannelHook;
 use mix\console\ExitCode;
 use mix\client\PDOCoroutine;
 use mix\facades\Input;
 use mix\facades\Output;
-use Swoole\Coroutine\Channel;
 
 /**
  * 协程范例
@@ -31,25 +32,23 @@ class CoroutineCommand extends BaseCommand
         // 预处理
         parent::actionExec();
         // 执行
-        $this->exec();
+        $this->execute();
         // 返回退出码
         return ExitCode::OK;
     }
 
     // 执行
-    public function exec()
+    public function execute()
     {
         // 并行查询数据
         tgo(function () {
             $time = time();
-
-            $foo = $this->foo();
-            $bar = $this->bar();
-            var_dump($foo->pop());
-            var_dump($bar->pop());
-
+            // 并行查询数据
+            list($foo, $bar) = [$this->foo(), $this->bar()];
+            // 取出查询结果
+            list($fooResult, $barResult) = [$foo->pop(), $bar->pop()];
             // 输出 time: 2，说明是并行执行
-            Output::writeln('time: ' . (time() - $time));
+            Output::writeln('Time: ' . (time() - $time));
         });
     }
 
@@ -57,7 +56,10 @@ class CoroutineCommand extends BaseCommand
     public function foo()
     {
         $chan = new Channel();
-        tgo(function () use ($chan) {
+        tgo(function (ChannelHook $hook) use ($chan) {
+            // 安装钩子
+            $hook->install($chan);
+            // 子协程内只可使用局部变量，而组件为全局变量是不可以在子协程内使用的，会导致内存溢出，所以使用组件配置动态实例化
             $pdo    = PDOCoroutine::newInstanceByConfig('libraries.[coroutine.pdo]');
             $result = $pdo->createCommand('select sleep(2)')->queryAll();
             $chan->push($result);
@@ -69,7 +71,10 @@ class CoroutineCommand extends BaseCommand
     public function bar()
     {
         $chan = new Channel();
-        tgo(function () use ($chan) {
+        tgo(function (ChannelHook $hook) use ($chan) {
+            // 安装钩子
+            $hook->install($chan);
+            // 子协程内只可使用局部变量，而组件为全局变量是不可以在子协程内使用的，会导致内存溢出，所以使用组件配置动态实例化
             $pdo    = PDOCoroutine::newInstanceByConfig('libraries.[coroutine.pdo]');
             $result = $pdo->createCommand('select sleep(1)')->queryAll();
             $chan->push($result);
